@@ -31,6 +31,7 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
 
 # typescript
@@ -44,3 +45,9 @@ app-example
 
 # VSCode
 .vscode/
+
+# Secrets
+/secrets
+
+# Claude
+Claude.md
