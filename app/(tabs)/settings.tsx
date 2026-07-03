@@ -1,12 +1,23 @@
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
+import * as StoreReview from "expo-store-review";
 import * as WebBrowser from "expo-web-browser";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Alert,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { restorePurchasesAccess } from "@/lib/billing/purchases";
 import { supabase } from "@/lib/supabase";
+
+const IOS_APP_STORE_ID = process.env.EXPO_PUBLIC_IOS_APP_STORE_ID;
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -64,6 +75,37 @@ export default function SettingsPage() {
     } finally {
       setIsRestoring(false);
     }
+  };
+
+  const handleLeaveReview = () => {
+    if (!IOS_APP_STORE_ID) {
+      Alert.alert(
+        "Not Available Yet",
+        "This app doesn't have an App Store listing configured yet.",
+      );
+      return;
+    }
+
+    Linking.openURL(
+      `https://apps.apple.com/app/id${IOS_APP_STORE_ID}?action=write-review`,
+    );
+  };
+
+  const handleRequestReviewPopup = async () => {
+    const isAvailable = await StoreReview.isAvailableAsync();
+    if (!isAvailable) {
+      Alert.alert(
+        "Not Available",
+        "The in-app review prompt isn't available on this build.",
+      );
+      return;
+    }
+
+    await StoreReview.requestReview();
+  };
+
+  const handleOpenNotificationSettings = () => {
+    Linking.openSettings();
   };
 
   const sendMockNotification = async () => {
@@ -149,6 +191,13 @@ export default function SettingsPage() {
 
         <Pressable
           style={styles.button}
+          onPress={handleOpenNotificationSettings}
+        >
+          <Text style={styles.buttonText}>Notification Settings</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.button}
           onPress={() =>
             WebBrowser.openBrowserAsync("https://xlaris.com/privacy")
           }
@@ -171,6 +220,21 @@ export default function SettingsPage() {
         >
           <Text style={styles.buttonText}>Contact Us</Text>
         </Pressable>
+
+        {Platform.OS === "ios" && (
+          <>
+            <Pressable style={styles.button} onPress={handleLeaveReview}>
+              <Text style={styles.buttonText}>Leave a Review</Text>
+            </Pressable>
+
+            <Pressable
+              style={styles.button}
+              onPress={handleRequestReviewPopup}
+            >
+              <Text style={styles.buttonText}>Rate In-App</Text>
+            </Pressable>
+          </>
+        )}
 
         <Pressable
           style={[styles.button, isRestoring && styles.disabledButton]}
