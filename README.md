@@ -1,50 +1,45 @@
-# Welcome to your Expo app 👋
+# App Template
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A boilerplate for apps.
 
-## Get started
+## Tech Stack
+- **Framework**: Expo / React Native 
+- **Backend & Auth**: Supabase 
+- **Payments**: RevenueCat
+- **Analytics**: PostHog
 
-1. Install dependencies
+## Prerequisites
+- Node.js & npm
+- [EAS CLI](https://docs.expo.dev/build/setup/) (`npm i -g eas-cli`)
+- iOS Simulator, Android Emulator, or a physical device
 
+## Development
+1. **Install dependencies:**
    ```bash
    npm install
    ```
 
-2. Start the app
+2. **Environment Setup:**
+   Ensure your `.env` file is populated with your Supabase, RevenueCat, and PostHog keys.
 
+3. **Start the App:**
+   To run locally on a simulator/emulator:
    ```bash
-   npx expo start
+   npm run ios
+   # or
+   npm run android
    ```
 
-In the output, you'll find options to open the app in a
+   To test on a physical device using an EAS development build:
+   ```bash
+   npx expo start --dev-client --tunnel
+   ```
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Key Features
+- **Authentication**: Pre-configured Apple and Google Auth via Supabase.
+- **Monetization**: Built-in paywall integrated with RevenueCat (`app/(onboarding)/paywall.tsx`).
+- **Analytics**: Event tracking with PostHog (`posthog.capture()`).
+- **Growth**: Native app review prompts integrated via `expo-store-review`.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## Build & Release
+iOS builds are configured with `ios.useFrameworks: "static"` to support Swift pods. Run EAS build when you're ready for TestFlight or production.
