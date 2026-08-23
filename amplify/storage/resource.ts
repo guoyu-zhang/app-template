@@ -19,9 +19,13 @@ import { defineStorage } from "@aws-amplify/backend";
 export const storage = defineStorage({
   name: "appTemplateMedia",
   access: (allow) => ({
-    "media/*": [allow.authenticated.to(["read"])],
+    // Both rules on one path, not two paths. Amplify rejects a path that is a
+    // prefix of another containing {entity_id} — `media/*` alongside
+    // `media/{entity_id}/*` fails synth with InvalidStorageAccessPathError,
+    // because the two would disagree about who owns a key matching both.
     "media/{entity_id}/*": [
       allow.entity("identity").to(["read", "write", "delete"]),
+      allow.authenticated.to(["read"]),
     ],
   }),
 });
