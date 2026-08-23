@@ -15,7 +15,11 @@ See `authentication.md` and `RevenueCat.md` for the *how*; this is the *what* an
 - GCP OAuth consent screen — if you reuse Cloud project `187798873933`
 - `xlaris.com/privacy` + `/terms`
 
-Supabase and RevenueCat get a **new project per app**. Firebase/GCP can be shared (skips the consent screen).
+RevenueCat gets a **new project per app**. Firebase/GCP can be shared (skips the consent screen).
+
+The backend is the exception: on AWS every app lives in **one account**, because
+the 10,000 free Cognito MAU is per account and separate accounts would waste it.
+(On the `supabase` branch it is a project per app.)
 
 ---
 
@@ -46,16 +50,26 @@ Scripted — see `scripts/asc_setup.py` (needs `ASC_ISSUER_ID`, see its docstrin
 - [ ] Register iOS + Android apps in Firebase
 - [ ] Download `google-services.json` → `secrets/` (`firebase apps:sdkconfig`)
 - [ ] Add the SHA-1 from step 1 (`firebase apps:android:sha:create`)
-- [ ] OAuth client — **Web** → used by Supabase + `webClientId`
+- [ ] OAuth client — **Web** → used by Cognito + `webClientId`
 - [ ] OAuth client — **iOS** (needs bundle ID) → `iosClientId` + `iosUrlScheme`
 - [ ] OAuth client — **Android** (needs package + SHA-1) → not referenced in code, just must exist
 
-## 4. Supabase
+## 4. AWS Amplify
 
-- [ ] Create project → URL + anon key
-- [ ] Enable Google provider (web client ID + secret) — tick **skip nonce check**
-- [ ] Enable Apple provider (bundle ID as client ID)
-- [ ] Run every file in `supabase_sql/` in the SQL editor — no migration tooling here
+Run `python3 ~/Projects/app-setup/scripts/amplify_setup.py gates` for the full
+list with links — seven browser steps, five of them once per account.
+
+- [ ] The account-level gates: AWS account (Paid plan), root MFA, budget alert,
+      SES production access
+- [ ] Google OAuth client + secret, Apple Service ID + `.p8`
+- [ ] `npm create amplify@latest` -> `amplify/`
+- [ ] Define `amplify/{auth,data,storage}/resource.ts`
+- [ ] `npx ampx sandbox` -> `amplify_outputs.json`
+- [ ] `amplify_setup.py create --name "<App>"` -> appId for CI deploys
+- [ ] **Test Apple/Google sign-in on a real device** — Cognito has no
+      equivalent of Supabase's `signInWithIdToken`, so it opens a browser
+      webview instead of the native sheet. Check this before building anything
+      else on top.
 
 ## 5. Store products
 

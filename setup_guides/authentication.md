@@ -82,8 +82,18 @@ eas credentials -p android
 
 ---
 
-## 4. Supabase Sign in providers
+## 4. Cognito sign-in providers
 
-Don't forget to put update supabase sign in providers, enable apple sign in and add the client id, enable google sign in and ad the web client id and the secret key
+Google and Apple are configured as external providers in
+`amplify/auth/resource.ts`, not in a dashboard — the web client ID and secret,
+and Apple's clientId/keyId/teamId/privateKey, go in as Amplify secrets
+(`npx ampx sandbox secret set ...`).
 
-You may also need to check the skip nonce checks for google sign in.
+There is no equivalent of Supabase's "skip nonce check", because there is no
+native token exchange to skip it for: Cognito cannot accept Apple's
+`identityToken` or Google's `idToken` directly. Both providers go through
+`signInWithRedirect`, which opens a browser webview. Confirm that is acceptable
+on a device before wiring the rest.
+
+*(The Supabase provider setup this section used to describe is on the
+`supabase` branch.)*

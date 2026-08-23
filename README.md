@@ -2,9 +2,30 @@
 
 A boilerplate for apps.
 
+## Branches
+
+The template ships in two backend flavours. Everything above the backend —
+navigation, onboarding, paywall, settings, analytics — is identical.
+
+| Branch | Backend | State |
+| --- | --- | --- |
+| `main` | AWS / Amplify (Cognito, AppSync, S3) | **in progress** — adapters are stubs |
+| `supabase` | Supabase | working; every shipped app is on this line |
+
+```bash
+git clone https://github.com/guoyu-zhang/app-template.git new-app            # AWS
+git clone -b supabase https://github.com/guoyu-zhang/app-template.git new-app # Supabase
+```
+
+Both are checked out locally as `~/Projects/app-template` and
+`~/Projects/app-template-supabase` (a git worktree of the same repo).
+
+Shared work lands on `main` and merges into `supabase`; backend work never
+crosses. The two differ only in `lib/backend/` and the backend's own config.
+
 ## Tech Stack
-- **Framework**: Expo / React Native 
-- **Backend & Auth**: Supabase 
+- **Framework**: Expo / React Native
+- **Backend & Auth**: AWS Amplify — Cognito, AppSync/DynamoDB, S3 *(see `lib/backend/aws/README.md`)*
 - **Payments**: RevenueCat
 - **Analytics**: PostHog
 
@@ -20,7 +41,8 @@ A boilerplate for apps.
    ```
 
 2. **Environment Setup:**
-   Ensure your `.env` file is populated with your Supabase, RevenueCat, and PostHog keys.
+   Ensure your `.env` file is populated with your RevenueCat and PostHog keys.
+   The AWS backend reads `amplify_outputs.json`, written by `npx ampx sandbox`.
 
 3. **Start the App:**
    To run locally on a simulator/emulator:
@@ -36,7 +58,8 @@ A boilerplate for apps.
    ```
 
 ## Key Features
-- **Authentication**: Pre-configured Apple and Google Auth via Supabase.
+- **Authentication**: Apple and Google sign-in behind a backend adapter
+  (`@/lib/backend`), so screens never touch a vendor SDK.
 - **Monetization**: Built-in paywall integrated with RevenueCat (`app/(onboarding)/paywall.tsx`).
 - **Analytics**: Event tracking with PostHog (`posthog.capture()`).
 - **Growth**: Native app review prompts integrated via `expo-store-review`.
