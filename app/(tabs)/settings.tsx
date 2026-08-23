@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { useRouter } from "expo-router";
 import * as StoreReview from "expo-store-review";
@@ -24,6 +25,7 @@ export default function SettingsPage() {
   const [message, setMessage] = useState("");
   const [isDeleting, setIsDeleting] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
+  const [isTestingPush, setIsTestingPush] = useState(false);
   const [isEmailUser, setIsEmailUser] = useState(false);
   const [userEmail, setUserEmail] = useState("");
 
@@ -126,6 +128,103 @@ export default function SettingsPage() {
     });
   };
 
+  // The mock notification above never leaves the phone. This one goes
+  // token -> Expo -> APNs (or FCM) -> back, which is the only path that can
+  // tell you the push credentials are right. Both halves fail quietly: a bad
+  // APNs key still returns a ticket, and only the receipt says so.
+  const sendPushRoundTrip = async () => {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== "granted") {
+      setMessage("You need to enable notifications first!");
+      return;
+    }
+
+    setMessage("");
+    setIsTestingPush(true);
+    try {
+      const projectId =
+        Constants?.expoConfig?.extra?.eas?.projectId ??
+        Constants?.easConfig?.projectId;
+
+      // Throws when the device never registered with APNs, which is itself
+      // the answer — no token, no push, whatever the servers say later.
+      const { data: token } = await Notifications.getExpoPushTokenAsync({
+        projectId,
+      });
+
+      const sendResponse = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          to: token,
+          title: "Round trip 🛫",
+          body: "This one came from Apple, not from this device.",
+          sound: "default",
+        }),
+      });
+      const ticket = (await sendResponse.json())?.data;
+
+      if (!ticket || ticket.status === "error") {
+        Alert.alert(
+          "Expo rejected it",
+          describePushError(ticket) ||
+            "No ticket came back. Check the device is online.",
+        );
+        return;
+      }
+
+      // A ticket only means Expo queued it. The receipt is where a missing
+      // APNs key or a stale token actually surfaces, and it takes a few
+      // seconds to appear.
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const receiptResponse = await fetch(
+          "https://exp.host/--/api/v2/push/getReceipts",
+          {
+            method: "POST",
+            headers: {
+              Accept: "application/json",
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ ids: [ticket.id] }),
+          },
+        );
+        const receipt = (await receiptResponse.json())?.data?.[ticket.id];
+        if (!receipt) continue;
+
+        if (receipt.status === "ok") {
+          Alert.alert(
+            "Delivered ✅",
+            "Apple accepted the push, so the APNs key on EAS is right. If no " +
+              "banner appeared, that is the phone's notification settings, " +
+              "not the credentials.",
+          );
+        } else {
+          Alert.alert("Apple refused it", describePushError(receipt));
+        }
+        return;
+      }
+
+      Alert.alert(
+        "No receipt yet",
+        `Expo queued it as ${ticket.id} but said nothing within 12s. That is ` +
+          "usually a slow queue rather than a failure — try again in a minute.",
+      );
+    } catch (error: any) {
+      Alert.alert(
+        "Could not get a push token",
+        `${error?.message ?? error}\n\nA simulator cannot register for push, ` +
+          "and Expo Go registers against Expo's own project rather than this one.",
+      );
+    } finally {
+      setIsTestingPush(false);
+    }
+  };
+
   const handleDeleteAccount = async () => {
     Alert.alert(
       "Delete Account",
@@ -187,6 +286,16 @@ export default function SettingsPage() {
         {message ? <Text style={styles.message}>{message}</Text> : null}
         <Pressable style={styles.button} onPress={sendMockNotification}>
           <Text style={styles.buttonText}>Test Notification</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.button, isTestingPush && styles.disabledButton]}
+          onPress={() => void sendPushRoundTrip()}
+          disabled={isTestingPush}
+        >
+          <Text style={styles.buttonText}>
+            {isTestingPush ? "Testing…" : "Test Push Round Trip"}
+          </Text>
         </Pressable>
 
         <Pressable
@@ -268,6 +377,21 @@ export default function SettingsPage() {
       </View>
     </SafeAreaView>
   );
+}
+
+// Expo puts the useful part in `details.error` — DeviceNotRegistered means a
+// stale token, InvalidCredentials means the APNs key on EAS is wrong or
+// missing. `message` alone reads like a generic failure.
+function describePushError(entry: any): string {
+  if (!entry) return "";
+  const code = entry?.details?.error;
+  const hint =
+    code === "DeviceNotRegistered"
+      ? "This token is stale — reinstall the build and try again."
+      : code === "InvalidCredentials"
+        ? "The APNs key on EAS is missing or belongs to another team. Run `eas credentials -p ios`."
+        : "";
+  return [entry.message, code && `(${code})`, hint].filter(Boolean).join("\n\n");
 }
 
 const styles = StyleSheet.create({
