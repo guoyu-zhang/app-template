@@ -37,6 +37,17 @@ export type OAuthResult = BackendResult & { cancelled?: boolean };
 export type AuthSubscription = { unsubscribe: () => void };
 
 export interface AuthAdapter {
+  /**
+   * Whether `signInWithIdToken` can actually be used. Supabase exchanges a
+   * native Apple/Google token directly; Cognito has no equivalent, so on that
+   * backend the native sign-in sheet produces a token nothing can spend.
+   *
+   * Screens read this to choose the sign-in path *before* prompting, rather
+   * than putting the user through a native sheet and then a browser. Absent
+   * means supported, so an adapter only sets it to opt out.
+   */
+  readonly supportsNativeIdToken?: boolean;
+
   getSession(): Promise<BackendSession | null>;
 
   signInWithPassword(params: {

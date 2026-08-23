@@ -23,7 +23,7 @@ import { styles } from "./styles";
 
 GoogleSignin.configure({
   webClientId:
-    "187798873933-ujuitpbpg7e46dskojpead8cvk7b7rs1.apps.googleusercontent.com", // Replace with your web client ID from Supabase Google Provider
+    "187798873933-ujuitpbpg7e46dskojpead8cvk7b7rs1.apps.googleusercontent.com", // Replace with your own web client ID
   iosClientId:
     "187798873933-o6elcb0ebdfpc27lurlvgjuniic0bdb6.apps.googleusercontent.com", // Replace with your iOS client ID
 });
@@ -184,11 +184,16 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
   }
 
   async function handleOAuth(provider: "google" | "apple") {
-    if (provider === "apple" && Platform.OS === "ios") {
+    // The native sheets are the better UX, but they only pay off on a backend
+    // that can spend the token they return. Cognito cannot, so on that line
+    // this falls through to the browser flow instead of prompting twice.
+    const native = auth.supportsNativeIdToken !== false;
+
+    if (native && provider === "apple" && Platform.OS === "ios") {
       return handleAppleAuth();
     }
 
-    if (provider === "google" && Platform.OS !== "web") {
+    if (native && provider === "google" && Platform.OS !== "web") {
       return handleGoogleAuth();
     }
 
