@@ -51,3 +51,9 @@ app-example
 
 # Claude
 Claude.md
+# Amplify
+# amplify_outputs.json is NOT ignored: the checked-in copy is a placeholder
+# that keeps a fresh clone building, and the generated values are public
+# client config that ships in the binary anyway.
+.amplify/
+amplify/.attributes.json
