@@ -72,3 +72,33 @@ export async function restorePurchasesAccess() {
   const customerInfo = await Purchases.restorePurchases();
   return hasEntitlement(customerInfo);
 }
+
+/**
+ * Whether this platform can redeem App Store offer codes at all.
+ *
+ * The redemption sheet is StoreKit's, so it exists only on iOS. Play has no
+ * equivalent an app can open, which is why the entry point is hidden rather
+ * than shown-and-failing on Android.
+ */
+export function canRedeemOfferCode() {
+  return Platform.OS === "ios";
+}
+
+/**
+ * Open the App Store's offer code redemption sheet and report whether the
+ * customer came back entitled.
+ *
+ * Apple owns the code field — the app never sees the code and never applies
+ * the discount itself. The sheet also resolves without saying what happened
+ * inside it, so entitlement is re-read afterwards rather than inferred from
+ * the call returning.
+ */
+export async function redeemOfferCode() {
+  if (!canRedeemOfferCode()) {
+    return false;
+  }
+
+  await Purchases.presentCodeRedemptionSheet();
+  const customerInfo = await Purchases.getCustomerInfo();
+  return hasEntitlement(customerInfo);
+}

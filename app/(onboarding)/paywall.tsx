@@ -5,9 +5,11 @@ import { type PurchasesPackage } from "react-native-purchases";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import {
+  canRedeemOfferCode,
   configurePurchases,
   getCurrentPaywallPackages,
   purchasePaywallPackage,
+  redeemOfferCode,
   restorePurchasesAccess,
 } from "@/lib/billing/purchases";
 import { supabase } from "@/lib/supabase";
@@ -68,6 +70,26 @@ export default function PaywallScreen() {
       setMessage("Purchase completed, but access is not active yet.");
     } catch {
       setMessage("Purchase was not completed.");
+    } finally {
+      setIsPurchasing(false);
+    }
+  };
+
+  const handleRedeemCode = async () => {
+    setIsPurchasing(true);
+    setMessage("");
+
+    try {
+      const hasAccess = await redeemOfferCode();
+      if (hasAccess) {
+        goToNotifications();
+        return;
+      }
+      // Also the normal path when the sheet is dismissed without redeeming,
+      // which is indistinguishable from a code that didn't work.
+      setMessage("No code was redeemed.");
+    } catch {
+      setMessage("Could not open the redemption screen.");
     } finally {
       setIsPurchasing(false);
     }
@@ -137,6 +159,21 @@ export default function PaywallScreen() {
             <Text style={styles.primaryButtonText}>No plans available</Text>
           </Pressable>
         )}
+
+        {canRedeemOfferCode() ? (
+          <Pressable
+            style={[
+              styles.secondaryButton,
+              isPurchasing && styles.disabledButton,
+            ]}
+            onPress={handleRedeemCode}
+            disabled={isPurchasing || isLoading}
+          >
+            <Text style={styles.secondaryButtonText}>
+              Have a discount code?
+            </Text>
+          </Pressable>
+        ) : null}
 
         <Pressable
           style={[
