@@ -28,6 +28,23 @@ import { defineAuth, secret } from "@aws-amplify/backend";
  *    key; every key the app writes through `auth.updateUserMetadata` needs a
  *    line here first, and adding one later is a user pool update.
  */
+/**
+ * Apple is in unless explicitly skipped, because "in" is the steady state and
+ * a plain `npx ampx sandbox` must reach it.
+ *
+ * The first deploy of a new backend has to skip it, though, and the reason is
+ * circular rather than accidental: this stack will not build without the four
+ * Apple secrets, and one of them — the Service ID — cannot be configured at
+ * Apple until its Return URL is known, which is the Cognito hosted-UI domain,
+ * which does not exist until this stack has been deployed. `defineAuth` does
+ * not accept a `domainPrefix`, so the domain cannot be chosen in advance
+ * either.
+ *
+ * So: deploy once with AMPLIFY_SKIP_APPLE=1 and email/Google work, the domain
+ * exists, Apple's Service ID can be finished, and the next deploy adds Apple.
+ */
+const skipApple = process.env.AMPLIFY_SKIP_APPLE === "1";
+
 export const auth = defineAuth({
   loginWith: {
     email: true,
@@ -38,14 +55,18 @@ export const auth = defineAuth({
         scopes: ["email", "profile"],
         attributeMapping: { email: "email" },
       },
-      signInWithApple: {
-        clientId: secret("APPLE_SERVICE_ID"),
-        teamId: secret("APPLE_TEAM_ID"),
-        keyId: secret("APPLE_KEY_ID"),
-        privateKey: secret("APPLE_PRIVATE_KEY"),
-        scopes: ["email", "name"],
-        attributeMapping: { email: "email" },
-      },
+      ...(skipApple
+        ? {}
+        : {
+            signInWithApple: {
+              clientId: secret("APPLE_SERVICE_ID"),
+              teamId: secret("APPLE_TEAM_ID"),
+              keyId: secret("APPLE_KEY_ID"),
+              privateKey: secret("APPLE_PRIVATE_KEY"),
+              scopes: ["email", "name"] as const,
+              attributeMapping: { email: "email" },
+            },
+          }),
       callbackUrls: ["apptemplateaws://", "http://localhost:8081/"],
       logoutUrls: ["apptemplateaws://", "http://localhost:8081/"],
     },
