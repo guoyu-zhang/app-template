@@ -30,6 +30,14 @@ import { purgeOwnedRows } from "./db";
 const METADATA_PREFIX = "custom:";
 
 /**
+ * How long to wait for the Hub to report a redirect sign-in before treating
+ * the silence as a dismissed browser. Long enough to cover a slow token
+ * exchange on a bad connection; short enough that a user who backed out is
+ * not left staring at a spinner.
+ */
+const OAUTH_GRACE_MS = 15_000;
+
+/**
  * Which identity provider the user came in through. Cognito puts federated
  * origins in an `identities` claim on the ID token; a user pool account has
  * no such claim, and the app calls that "email" because that is the only
@@ -139,27 +147,65 @@ export const auth: AuthAdapter = {
   /**
    * `signInWithRedirect` opens the Cognito hosted UI, which returns to the
    * app's scheme. Unlike the Supabase branch there are no tokens in the
-   * return URL to hand back — Amplify stores the session itself and announces
-   * it on the Hub — so success is "a session exists afterwards", and the
-   * user closing the browser is reported as cancelled rather than as failure.
+   * return URL to hand back: Amplify exchanges the code itself and announces
+   * the result on the Hub.
+   *
+   * That exchange finishes *after* the promise below resolves — the promise
+   * tracks the browser closing, not the sign-in completing. Reading the
+   * session straight afterwards therefore races it, and loses often enough
+   * that a successful sign-in reads as a cancelled one. So: subscribe first
+   * (an event fired before the listener exists is gone), start the flow, then
+   * wait for the Hub to speak.
+   *
+   * A dismissed browser produces no event at all, which is indistinguishable
+   * from a slow exchange until enough time has passed. Hence the grace period,
+   * and the session check before calling it cancelled — silence is the one
+   * outcome the Hub cannot report.
    */
   async signInWithOAuth({ provider }): Promise<OAuthResult> {
+    let settle: (result: OAuthResult) => void = () => {};
+    const settled = new Promise<OAuthResult>((resolve) => {
+      settle = resolve;
+    });
+
+    const stopListening = Hub.listen("auth", ({ payload }) => {
+      if (payload.event === "signInWithRedirect") {
+        settle({ error: null });
+      } else if (payload.event === "signInWithRedirect_failure") {
+        const failure = (payload as { data?: { error?: unknown } }).data?.error;
+        settle({ error: asError(failure ?? new Error("OAuth sign-in failed.")) });
+      }
+    });
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
     try {
       await signInWithRedirect({
         provider: provider === "apple" ? "Apple" : "Google",
       });
 
-      const session = await currentSession();
-      if (!session) return { error: null, cancelled: true };
-      return { error: null };
+      const graced = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), OAUTH_GRACE_MS);
+      });
+
+      const result = await Promise.race([settled, graced]);
+      if (result) return result;
+
+      return (await currentSession())
+        ? { error: null }
+        : { error: null, cancelled: true };
     } catch (error) {
       const message = asError(error).message;
-      // Amplify reports a dismissed browser sheet as a thrown error; the
-      // screen should fall silent for it, not show a failure.
+      // Amplify reports a dismissed browser sheet as a thrown error on some
+      // platforms and as silence on others; the screen should fall quiet for
+      // both, not show a failure.
       if (/cancell?ed|closed|user_cancel/i.test(message)) {
         return { error: null, cancelled: true };
       }
       return { error: asError(error) };
+    } finally {
+      stopListening();
+      if (timer) clearTimeout(timer);
     }
   },
 
