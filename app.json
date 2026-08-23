@@ -11,13 +11,13 @@
     "ios": {
       "supportsTablet": true,
       "usesAppleSignIn": true,
-      "bundleIdentifier": "com.xlaris.apptemplateaws",
+      "bundleIdentifier": "com.xlaris.app.template.aws",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
-      "package": "com.xlaris.apptemplateaws",
+      "package": "com.xlaris.app.template.aws",
       "googleServicesFile": "./secrets/google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
