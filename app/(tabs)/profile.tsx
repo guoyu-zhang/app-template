@@ -1,13 +1,13 @@
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { supabase } from "@/lib/supabase";
+import { auth } from "@/lib/backend";
 
 export default function ProfileScreen() {
   const router = useRouter();
 
   async function handleSignOut() {
-    await supabase.auth.signOut();
+    await auth.signOut();
     router.replace("/");
   }
 

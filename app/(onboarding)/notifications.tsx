@@ -11,7 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { supabase } from "@/lib/supabase";
+import { auth } from "@/lib/backend";
 import { styles } from "./styles";
 
 // Ensure notifications show up when app is in foreground
@@ -69,16 +69,16 @@ export default function NotificationsScreen() {
           const token = tokenData.data;
           console.log("Expo Push Token:", token);
 
-          // Save the push token to Supabase for the current user's metadata
-          // since we cannot guarantee a profiles table exists
-          const { error } = await supabase.auth.updateUser({
-            data: { push_token: token },
+          // Save the push token to the user's metadata since we cannot
+          // guarantee a profiles table exists
+          const { error } = await auth.updateUserMetadata({
+            push_token: token,
           });
 
           if (error) {
-            console.error("Error saving push token to Supabase:", error);
+            console.error("Error saving push token:", error);
           } else {
-            console.log("Push token saved to Supabase successfully!");
+            console.log("Push token saved successfully!");
           }
         } catch (tokenError) {
           console.error("Failed to get push token:", tokenError);

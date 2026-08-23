@@ -14,7 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { supabase } from "@/lib/supabase";
+import { auth, db } from "@/lib/backend";
 
 const CATEGORIES = ["Bug Report", "Feature Request", "Billing Issue", "Other"];
 
@@ -33,21 +33,17 @@ export default function ContactPage() {
     setIsSubmitting(true);
 
     try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      const session = await auth.getSession();
 
       if (!session?.user) {
         throw new Error("You must be logged in to send a message.");
       }
 
-      const { error } = await supabase.from("contact_messages").insert([
-        {
-          user_id: session.user.id,
-          category: selectedCategory,
-          message: message.trim(),
-        },
-      ]);
+      const { error } = await db.submitContactMessage({
+        userId: session.user.id,
+        category: selectedCategory,
+        message: message.trim(),
+      });
 
       if (error) throw error;
 

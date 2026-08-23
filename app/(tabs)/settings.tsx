@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { restorePurchasesAccess } from "@/lib/billing/purchases";
-import { supabase } from "@/lib/supabase";
+import { auth } from "@/lib/backend";
 
 const IOS_APP_STORE_ID = process.env.EXPO_PUBLIC_IOS_APP_STORE_ID;
 
@@ -30,11 +30,10 @@ export default function SettingsPage() {
   const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    auth.getSession().then((session) => {
       if (session?.user) {
         // Check if the user's primary provider is email
-        const isEmail = session.user.app_metadata.provider === "email";
-        setIsEmailUser(isEmail);
+        setIsEmailUser(session.user.provider === "email");
         setUserEmail(session.user.email || "");
       }
     });
@@ -44,7 +43,7 @@ export default function SettingsPage() {
     if (!userEmail) return;
 
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(userEmail);
+      const { error } = await auth.resetPassword(userEmail);
       if (error) throw error;
       Alert.alert(
         "Password Reset",
@@ -243,28 +242,22 @@ export default function SettingsPage() {
 
             try {
               // 1. Get the current session
-              const {
-                data: { session },
-                error: sessionError,
-              } = await supabase.auth.getSession();
+              const session = await auth.getSession();
 
-              if (sessionError || !session?.user) {
+              if (!session?.user) {
                 throw new Error("Could not verify your session.");
               }
 
-              // 2. Call the Supabase RPC function to delete the user
-              // Note: You must create this RPC function in your Supabase dashboard first!
-              const { error: rpcError } = await supabase.rpc("delete_user");
+              // 2. Delete the account server-side, then clear the local
+              // session. The adapter owns both halves.
+              const { error } = await auth.deleteAccount();
 
-              if (rpcError) {
-                console.error("RPC Error:", rpcError);
+              if (error) {
+                console.error("Delete account error:", error);
                 throw new Error("Failed to delete account on the server.");
               }
 
-              // 3. Sign out the user locally
-              await supabase.auth.signOut();
-
-              // 4. Redirect to welcome screen
+              // 3. Redirect to welcome screen
               router.replace("/(onboarding)/welcome");
             } catch (error: any) {
               setMessage(

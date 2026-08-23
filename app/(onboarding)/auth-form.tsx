@@ -6,7 +6,6 @@ import {
 import * as AppleAuthentication from "expo-apple-authentication";
 import * as Linking from "expo-linking";
 import { type Href, useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -18,7 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { supabase } from "@/lib/supabase";
+import { auth } from "@/lib/backend";
 
 import { styles } from "./styles";
 
@@ -81,11 +80,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
 
     const { error } =
       mode === "signin"
-        ? await supabase.auth.signInWithPassword({
-            email: trimmedEmail,
-            password,
-          })
-        : await supabase.auth.signUp({ email: trimmedEmail, password });
+        ? await auth.signInWithPassword({ email: trimmedEmail, password })
+        : await auth.signUp({ email: trimmedEmail, password });
 
     if (error) {
       setMessage(error.message);
@@ -107,9 +103,8 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         ],
       });
 
-      // Sign in via Supabase Auth
       if (credential.identityToken) {
-        const { error } = await supabase.auth.signInWithIdToken({
+        const { error } = await auth.signInWithIdToken({
           provider: "apple",
           token: credential.identityToken,
         });
@@ -145,7 +140,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
       await GoogleSignin.hasPlayServices();
       const userInfo = await GoogleSignin.signIn();
       if (userInfo.data?.idToken) {
-        const { error } = await supabase.auth.signInWithIdToken({
+        const { error } = await auth.signInWithIdToken({
           provider: "google",
           token: userInfo.data.idToken,
         });
@@ -201,58 +196,18 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
     setMessage("");
 
     const redirectTo = Linking.createURL("/");
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { error, cancelled } = await auth.signInWithOAuth({
       provider,
-      options: {
-        redirectTo,
-        skipBrowserRedirect: true,
-      },
+      redirectTo,
     });
+
+    if (cancelled) {
+      setIsLoading(false);
+      return;
+    }
 
     if (error) {
       setMessage(error.message);
-      setIsLoading(false);
-      return;
-    }
-
-    if (!data?.url) {
-      setMessage("Unable to start OAuth flow.");
-      setIsLoading(false);
-      return;
-    }
-
-    const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
-
-    if (result.type !== "success") {
-      setIsLoading(false);
-      return;
-    }
-
-    const hash = result.url.includes("#") ? result.url.split("#")[1] : "";
-    const params = new URLSearchParams(hash);
-    const accessToken = params.get("access_token");
-    const refreshToken = params.get("refresh_token");
-    const errorDescription = params.get("error_description");
-
-    if (errorDescription) {
-      setMessage(errorDescription);
-      setIsLoading(false);
-      return;
-    }
-
-    if (!accessToken || !refreshToken) {
-      setMessage("OAuth sign-in failed to return tokens.");
-      setIsLoading(false);
-      return;
-    }
-
-    const { error: setSessionError } = await supabase.auth.setSession({
-      access_token: accessToken,
-      refresh_token: refreshToken,
-    });
-
-    if (setSessionError) {
-      setMessage(setSessionError.message);
       setIsLoading(false);
       return;
     }

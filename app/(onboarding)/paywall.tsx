@@ -12,7 +12,7 @@ import {
   redeemOfferCode,
   restorePurchasesAccess,
 } from "@/lib/billing/purchases";
-import { supabase } from "@/lib/supabase";
+import { auth } from "@/lib/backend";
 
 import { styles } from "./styles";
 
@@ -30,9 +30,7 @@ export default function PaywallScreen() {
 
     const loadPaywall = async () => {
       try {
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const session = await auth.getSession();
         await configurePurchases(session?.user.id);
         const pkgs = await getCurrentPaywallPackages();
         if (!isActive) return;

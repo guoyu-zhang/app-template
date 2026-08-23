@@ -4,9 +4,9 @@ import { type Href, type Router } from "expo-router";
 import { usePostHog } from "posthog-react-native";
 import { useEffect } from "react";
 
-import { supabase } from "@/lib/supabase";
+import { auth, type BackendSession } from "@/lib/backend";
 
-async function updatePushToken(userId: string) {
+async function updatePushToken() {
   try {
     const { status } = await Notifications.getPermissionsAsync();
     if (status !== "granted") return;
@@ -21,9 +21,7 @@ async function updatePushToken(userId: string) {
 
     // We update user metadata instead of a profiles table
     // since we cannot guarantee a profiles table exists
-    await supabase.auth.updateUser({
-      data: { push_token: tokenData.data },
-    });
+    await auth.updateUserMetadata({ push_token: tokenData.data });
   } catch (error) {
     console.error("Failed to update push token on auth change:", error);
   }
@@ -35,10 +33,15 @@ export function useAuthRedirect(router: Router) {
   useEffect(() => {
     let isActive = true;
 
-    const redirectBySession = (session: any) => {
+    const redirectBySession = (session: BackendSession | null) => {
       if (session?.user) {
-        updatePushToken(session.user.id);
-        posthog.identify(session.user.id, { email: session.user.email });
+        updatePushToken();
+        // Social sign-ins can withhold the email; PostHog properties must
+        // not carry undefined.
+        posthog.identify(
+          session.user.id,
+          session.user.email ? { email: session.user.email } : undefined,
+        );
       } else {
         posthog.reset();
       }
@@ -48,14 +51,12 @@ export function useAuthRedirect(router: Router) {
       );
     };
 
-    supabase.auth.getSession().then(({ data }) => {
+    auth.getSession().then((session) => {
       if (!isActive) return;
-      redirectBySession(data.session);
+      redirectBySession(session);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    const subscription = auth.onAuthStateChange((session) => {
       if (!isActive) return;
       redirectBySession(session);
     });
