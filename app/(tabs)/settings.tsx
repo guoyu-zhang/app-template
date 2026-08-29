@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { PRIVACY_URL, TERMS_URL } from "@/lib/legal";
 import { restorePurchasesAccess } from "@/lib/billing/purchases";
 import { auth } from "@/lib/backend";
 
@@ -301,7 +302,7 @@ export default function SettingsPage() {
         <Pressable
           style={styles.button}
           onPress={() =>
-            WebBrowser.openBrowserAsync("https://xlaris.com/privacy")
+            WebBrowser.openBrowserAsync(PRIVACY_URL)
           }
         >
           <Text style={styles.buttonText}>Privacy Policy</Text>
@@ -310,7 +311,7 @@ export default function SettingsPage() {
         <Pressable
           style={styles.button}
           onPress={() =>
-            WebBrowser.openBrowserAsync("https://xlaris.com/terms")
+            WebBrowser.openBrowserAsync(TERMS_URL)
           }
         >
           <Text style={styles.buttonText}>Terms of Service</Text>
