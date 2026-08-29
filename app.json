@@ -71,7 +71,9 @@
       "router": {},
       "eas": {
         "projectId": "8e9e9080-f7e6-4f67-acc8-b6b0662ae422"
-      }
+      },
+      "privacyUrl": "https://xlaris.com/privacy",
+      "termsUrl": "https://xlaris.com/terms"
     },
     "owner": "guoyu-zhang"
   }
