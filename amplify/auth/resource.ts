@@ -1,5 +1,11 @@
 import { defineAuth, secret } from "@aws-amplify/backend";
 
+import { createAuthChallenge } from "./native-token/create-auth-challenge/resource";
+import { defineAuthChallenge } from "./native-token/define-auth-challenge/resource";
+import { verifyAuthChallengeResponse } from "./native-token/verify-auth-challenge/resource";
+import { postConfirmation } from "./post-confirmation/resource";
+import { preSignUp } from "./pre-sign-up/resource";
+
 /**
  * Cognito user pool — the AWS half of what the Supabase branch gets from
  * GoTrue. Three things here are not obvious:
@@ -58,5 +64,28 @@ export const auth = defineAuth({
       minLen: 0,
       maxLen: 2048,
     },
+  },
+  /**
+   * Native Apple and Google sign-in lives in these five functions.
+   *
+   * Cognito has no API that trades a provider ID token for a session, which is
+   * why social sign-in used to send everyone to the hosted UI in a browser. A
+   * custom auth challenge is the way round it: the device gets the token from
+   * the system sheet, and define/create/verify make Cognito accept it as the
+   * answer to a challenge. `verifyAuthChallengeResponse` is where the token is
+   * actually checked, and is the only thing standing between a stranger's JWT
+   * and someone's account.
+   *
+   * `preSignUp` and `postConfirmation` handle the accounts themselves: one
+   * creates them without an emailed code (the provider already verified the
+   * address) and links hosted-UI sign-ins to them, the other moves a user's
+   * attributes over the first time they arrive natively.
+   */
+  triggers: {
+    defineAuthChallenge,
+    createAuthChallenge,
+    verifyAuthChallengeResponse,
+    preSignUp,
+    postConfirmation,
   },
 });

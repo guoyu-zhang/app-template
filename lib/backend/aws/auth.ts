@@ -21,6 +21,10 @@ import type {
 
 import "./client";
 import { purgeOwnedRows } from "./db";
+import {
+  recallNativeProvider,
+  signInWithProviderToken,
+} from "./native-auth";
 
 /**
  * Cognito stores metadata as declared custom attributes, so the app's
@@ -54,6 +58,23 @@ function providerFrom(idTokenPayload: Record<string, unknown> | undefined) {
 }
 
 /**
+ * An account created from a native provider token is, to Cognito, an ordinary
+ * user pool account: there is no `identities` claim to read a provider off,
+ * because no federation took place. The device remembers which sheet the user
+ * came through, and that is the only place that knowledge exists.
+ *
+ * Only consulted when the token says "email", so a federated session always
+ * wins over a stale local note.
+ */
+async function resolveProvider(
+  fromToken: string,
+  userId: string,
+): Promise<string> {
+  if (fromToken !== "email") return fromToken;
+  return (await recallNativeProvider(userId)) ?? fromToken;
+}
+
+/**
  * Reads the pieces of a session that live in three different places: the
  * tokens, the user id, and the attributes. Returns null rather than throwing
  * when nobody is signed in, because that is the ordinary case on cold start
@@ -79,7 +100,10 @@ async function currentSession(): Promise<BackendSession | null> {
         id: userId,
         email: attributes.email ?? undefined,
         metadata,
-        provider: providerFrom(tokens.idToken?.payload),
+        provider: await resolveProvider(
+          providerFrom(tokens.idToken?.payload),
+          userId,
+        ),
       },
       accessToken: tokens.accessToken.toString(),
     };
@@ -94,15 +118,6 @@ function asError(error: unknown): Error {
 }
 
 export const auth: AuthAdapter = {
-  /**
-   * Cognito cannot exchange an Apple `identityToken` or a Google `idToken`
-   * for a user pool session — there is no equivalent of Supabase's
-   * `signInWithIdToken`. Screens read this to skip the native sign-in sheet
-   * and go straight to the browser flow, rather than putting the user
-   * through a native prompt whose result is unusable.
-   */
-  supportsNativeIdToken: false,
-
   async getSession() {
     return currentSession();
   },
@@ -130,18 +145,22 @@ export const auth: AuthAdapter = {
   },
 
   /**
-   * Kept on the interface so both branches stay type-compatible, and kept
-   * failing rather than silently redirecting: a caller that reached here
-   * has already shown the user a native sheet, and opening a browser to
-   * repeat the whole thing is worse than an honest error. `supportsNativeIdToken`
-   * is how a screen avoids getting here at all.
+   * Cognito has no endpoint that trades a provider token for a session, so the
+   * pool grows one: a custom auth challenge whose answer is the token, checked
+   * by a Lambda against Apple's or Google's public keys. The mechanics are in
+   * ./native-auth; from here it is an ordinary sign-in that happens to be
+   * answered with a JWT instead of a password.
+   *
+   * This is what keeps the Apple and Google buttons on the system sheet rather
+   * than in a browser showing the pool's generated hosted-UI domain.
    */
-  async signInWithIdToken() {
-    return {
-      error: new Error(
-        "Cognito cannot exchange a native provider token; use signInWithOAuth.",
-      ),
-    };
+  async signInWithIdToken({ provider, token }) {
+    try {
+      await signInWithProviderToken({ provider, token });
+      return { error: null };
+    } catch (error) {
+      return { error: asError(error) };
+    }
   },
 
   /**
