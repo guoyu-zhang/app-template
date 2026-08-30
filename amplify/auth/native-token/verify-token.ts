@@ -1,4 +1,4 @@
-import { createPublicKey, createVerify } from "node:crypto";
+import { createHash, createPublicKey, createVerify } from "node:crypto";
 
 import {
   APPLE_AUDIENCES,
@@ -27,9 +27,19 @@ export type VerifiedIdentity = {
   provider: NativeProvider;
   /** The provider's stable user id (`sub`). Never reused across accounts. */
   subject: string;
-  /** Always lowercased, because the account lookup compares on it. */
+  /** `provider|subject` — what an account stores and is opened by. */
+  identity: string;
+  /** Always lowercased. Used to *find* an account, never to authorise one. */
   email: string;
+  /** Hash of the raw token, for the replay store. */
+  tokenHash: string;
+  /** When the token stops being spendable, for that store's TTL. */
+  expiresAt: number;
 };
+
+export function identityOf(provider: NativeProvider, subject: string): string {
+  return `${provider}|${subject}`;
+}
 
 type ProviderSpec = {
   /**
@@ -68,13 +78,23 @@ type Jwk = { kid?: string; kty?: string; n?: string; e?: string };
  * function into a request amplifier pointed at Apple.
  */
 const JWKS_MIN_REFETCH_MS = 60_000;
+/**
+ * And an upper bound, so a key that has been withdrawn stops being trusted.
+ * A warm Lambda can live for hours; without this, a key revoked by Apple after
+ * a compromise would keep verifying signatures here until the environment
+ * happened to recycle.
+ */
+const JWKS_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
 async function signingKey(spec: ProviderSpec, kid: string): Promise<Jwk> {
   const cached = jwksCache.get(spec.jwksUri);
-  const cachedKey = cached?.keys.find((key) => key.kid === kid);
+  const fresh = cached && Date.now() - cached.fetchedAt < JWKS_MAX_AGE_MS;
+  const cachedKey = fresh
+    ? cached.keys.find((key) => key.kid === kid)
+    : undefined;
   if (cachedKey) return cachedKey;
-  if (cached && Date.now() - cached.fetchedAt < JWKS_MIN_REFETCH_MS) {
+  if (fresh && Date.now() - cached.fetchedAt < JWKS_MIN_REFETCH_MS) {
     throw new Error("Token was signed with an unknown key.");
   }
 
@@ -135,6 +155,15 @@ export function isNativeProvider(value: unknown): value is NativeProvider {
 export async function verifyProviderToken(
   provider: NativeProvider,
   token: string,
+  /**
+   * The nonce the client asked the provider to stamp into the token, when the
+   * platform supports one. Apple does; the Google Sign-In API this app uses
+   * does not, so its tokens carry no `nonce` claim and none is expected.
+   *
+   * A token that *does* carry one must be presented with it, so stripping the
+   * nonce is not a way around the check.
+   */
+  nonce?: string,
 ): Promise<VerifiedIdentity> {
   const spec = PROVIDERS[provider];
   const parts = token.split(".");
@@ -200,9 +229,16 @@ export async function verifyProviderToken(
     throw new Error("Provider has not verified this email address.");
   }
 
+  if (payload.nonce !== undefined && payload.nonce !== nonce) {
+    throw new Error("Token was minted for a different sign-in attempt.");
+  }
+
   return {
     provider,
     subject: payload.sub,
+    identity: identityOf(provider, payload.sub),
     email: payload.email.toLowerCase(),
+    tokenHash: createHash("sha256").update(token).digest("hex"),
+    expiresAt: payload.exp,
   };
 }

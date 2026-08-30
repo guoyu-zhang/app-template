@@ -33,6 +33,13 @@ interface is on the `supabase` branch and is the one with shipping mileage.
   holds the iOS bundle ID (Apple addresses native tokens to it, *not* to the
   Services ID the hosted UI uses) and the Google iOS and web client IDs. A wrong
   value there rejects every sign-in on one platform and no others.
+- **Identity is `provider|subject`, not email.** It lives in
+  `custom:provider_ids`; email only finds the account the first time. Accounts
+  are created by the provisioning function URL
+  (`custom.provision_native_user_url` in `amplify_outputs.json`), not by the
+  app, so the token stays out of `ClientMetadata` and no password reaches the
+  device. Tokens are spent once, recorded in a DynamoDB table with a TTL.
+  `npm run test:auth` covers the verifier.
 - **Password resets need SES.** Cognito's built-in sender caps at 50
   messages/day account-wide. Leaving the SES sandbox is a support ticket,
   roughly 24 hours.

@@ -154,9 +154,9 @@ export const auth: AuthAdapter = {
    * This is what keeps the Apple and Google buttons on the system sheet rather
    * than in a browser showing the pool's generated hosted-UI domain.
    */
-  async signInWithIdToken({ provider, token }) {
+  async signInWithIdToken({ provider, token, nonce }) {
     try {
-      await signInWithProviderToken({ provider, token });
+      await signInWithProviderToken({ provider, token, nonce });
       return { error: null };
     } catch (error) {
       return { error: asError(error) };

@@ -40,7 +40,8 @@ export const GOOGLE_AUDIENCES = [
  * `exp` alone is not enough: Google's ID tokens live an hour, which is an hour
  * in which a token captured off a device can be replayed. The sign-in it is
  * being spent on happens seconds after the sheet closes, so anything much
- * older than that did not come from the flow it claims to.
+ * older than that did not come from the flow it claims to. Replay *inside*
+ * this window is what the used-token store closes; see ./used-tokens.ts.
  */
 export const NATIVE_TOKEN_MAX_AGE_SECONDS = 600;
 
@@ -48,11 +49,22 @@ export const NATIVE_TOKEN_MAX_AGE_SECONDS = 600;
 export const CLOCK_SKEW_SECONDS = 60;
 
 /**
- * Keys the client puts in `clientMetadata` on sign-up. The pre-sign-up trigger
- * reads them to tell a provider-backed account from an ordinary email one.
+ * The provider identities an account may be signed into with, as
+ * `provider|subject` pairs separated by spaces — `apple|000123.abc`,
+ * `google|110022334455`.
+ *
+ * The `sub` is the identifier that matters. An email address is not a stable
+ * identity: Google says so outright, people change theirs, and an abandoned
+ * address on a managed domain can be reassigned to a different person, who
+ * would otherwise inherit the account. Email is used once, to find the account
+ * a new identity should attach to; from then on the pair below is what opens
+ * it.
+ *
+ * A list, because one person legitimately arrives through both providers. What
+ * is *not* allowed is a second subject for a provider the account already has:
+ * that is what a reassigned address looks like.
  */
-export const NATIVE_PROVIDER_METADATA_KEY = "nativeProvider";
-export const NATIVE_TOKEN_METADATA_KEY = "nativeToken";
+export const PROVIDER_IDS_ATTRIBUTE = "custom:provider_ids";
 
 /** Names the one custom challenge this pool defines, for the client to match. */
 export const NATIVE_TOKEN_CHALLENGE = "PROVIDER_ID_TOKEN";

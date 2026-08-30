@@ -6,6 +6,7 @@
 // the same interface lives on the `supabase` branch.
 
 export { auth } from "./aws/auth";
+export { createSignInNonce } from "./aws/native-auth";
 export { db } from "./aws/db";
 export { storage } from "./aws/storage";
 

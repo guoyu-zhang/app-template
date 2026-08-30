@@ -1,11 +1,16 @@
 import {
-  AdminDeleteUserCommand,
+  AdminCreateUserCommand,
   AdminLinkProviderForUserCommand,
+  AdminSetUserPasswordCommand,
   AdminUpdateUserAttributesCommand,
   CognitoIdentityProviderClient,
   ListUsersCommand,
   type UserType,
 } from "@aws-sdk/client-cognito-identity-provider";
+
+import { randomBytes } from "node:crypto";
+
+import { PROVIDER_IDS_ATTRIBUTE } from "./config";
 
 /**
  * The small amount of admin work native sign-in needs, in one place.
@@ -32,41 +37,6 @@ function attribute(user: UserType, name: string): string | undefined {
 export function isFederated(user: UserType): boolean {
   const identities = attribute(user, "identities");
   return Boolean(identities && identities !== "[]");
-}
-
-/**
- * Reads the provider identity off a federated user. Cognito stores it as a
- * JSON array in the `identities` attribute; the username prefix says the same
- * thing, but this is the copy Cognito itself uses when resolving a link.
- */
-export function federatedIdentityOf(
-  user: UserType,
-): { providerName: string; subject: string } | null {
-  const raw = attribute(user, "identities");
-  if (!raw) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return null;
-  }
-  const [first] = Array.isArray(parsed) ? parsed : [];
-  const providerName = (first as { providerName?: unknown })?.providerName;
-  const subject = (first as { userId?: unknown })?.userId;
-  if (typeof providerName !== "string" || typeof subject !== "string") {
-    return null;
-  }
-  return { providerName, subject };
-}
-
-export function customAttributesOf(user: UserType): Record<string, string> {
-  const attributes: Record<string, string> = {};
-  for (const entry of user.Attributes ?? []) {
-    if (entry.Name?.startsWith("custom:") && entry.Value) {
-      attributes[entry.Name] = entry.Value;
-    }
-  }
-  return attributes;
 }
 
 /**
@@ -138,27 +108,58 @@ export async function linkFederatedIdentity(params: {
   );
 }
 
-export async function copyCustomAttributes(params: {
+/**
+ * Creates the account a provider token has just proved someone owns.
+ *
+ * The password is generated here and never leaves: sign-in goes through the
+ * provider, and the account should not also have a password anybody — the
+ * device included — could type. `AdminSetUserPassword` with `Permanent` is
+ * what moves the account out of FORCE_CHANGE_PASSWORD, which cannot start a
+ * custom auth flow.
+ */
+export async function createNativeUser(params: {
   userPoolId: string;
-  username: string;
-  attributes: Record<string, string>;
+  email: string;
+  identity: string;
 }): Promise<void> {
-  const entries = Object.entries(params.attributes);
-  if (entries.length === 0) return;
   await client.send(
-    new AdminUpdateUserAttributesCommand({
+    new AdminCreateUserCommand({
       UserPoolId: params.userPoolId,
-      Username: params.username,
-      UserAttributes: entries.map(([Name, Value]) => ({ Name, Value })),
+      Username: params.email,
+      MessageAction: "SUPPRESS",
+      UserAttributes: [
+        { Name: "email", Value: params.email },
+        // The provider verified it. Saying otherwise would email a code for an
+        // address that has just been proven, and leave the account unusable
+        // until someone typed it back.
+        { Name: "email_verified", Value: "true" },
+        { Name: PROVIDER_IDS_ATTRIBUTE, Value: params.identity },
+      ],
+    }),
+  );
+
+  await client.send(
+    new AdminSetUserPasswordCommand({
+      UserPoolId: params.userPoolId,
+      Username: params.email,
+      Password: `${randomBytes(24).toString("base64url")}aA1!`,
+      Permanent: true,
     }),
   );
 }
 
-export async function deleteUser(
-  userPoolId: string,
-  username: string,
-): Promise<void> {
+export async function setProviderIdentities(params: {
+  userPoolId: string;
+  username: string;
+  identities: string[];
+}): Promise<void> {
   await client.send(
-    new AdminDeleteUserCommand({ UserPoolId: userPoolId, Username: username }),
+    new AdminUpdateUserAttributesCommand({
+      UserPoolId: params.userPoolId,
+      Username: params.username,
+      UserAttributes: [
+        { Name: PROVIDER_IDS_ATTRIBUTE, Value: params.identities.join(" ") },
+      ],
+    }),
   );
 }

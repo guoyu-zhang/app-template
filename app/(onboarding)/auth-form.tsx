@@ -17,7 +17,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { auth } from "@/lib/backend";
+import { auth, createSignInNonce } from "@/lib/backend";
 
 import { styles } from "./styles";
 
@@ -96,17 +96,26 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
     setIsLoading(true);
     setMessage("");
     try {
+      /**
+       * Apple stamps this into the token it mints, and the backend refuses a
+       * token whose nonce is not the one presented with it — so a token from
+       * some other sign-in cannot be handed over as if it were from this one.
+       * It has to exist before the sheet opens, which is why it is made here.
+       */
+      const nonce = createSignInNonce();
       const credential = await AppleAuthentication.signInAsync({
         requestedScopes: [
           AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
           AppleAuthentication.AppleAuthenticationScope.EMAIL,
         ],
+        nonce,
       });
 
       if (credential.identityToken) {
         const { error } = await auth.signInWithIdToken({
           provider: "apple",
           token: credential.identityToken,
+          nonce,
         });
 
         if (error) {
@@ -138,6 +147,9 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
     setMessage("");
     try {
       await GoogleSignin.hasPlayServices();
+      // No nonce: `GoogleSignin.signIn()` takes none (only the One Tap API
+      // does), so its tokens carry no nonce claim and the backend expects
+      // none. Replay is closed on the backend, by spending each token once.
       const userInfo = await GoogleSignin.signIn();
       if (userInfo.data?.idToken) {
         const { error } = await auth.signInWithIdToken({
