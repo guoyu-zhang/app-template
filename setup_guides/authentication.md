@@ -89,11 +89,25 @@ Google and Apple are configured as external providers in
 and Apple's clientId/keyId/teamId/privateKey, go in as Amplify secrets
 (`npx ampx sandbox secret set ...`).
 
-There is no equivalent of Supabase's "skip nonce check", because there is no
-native token exchange to skip it for: Cognito cannot accept Apple's
-`identityToken` or Google's `idToken` directly. Both providers go through
-`signInWithRedirect`, which opens a browser webview. Confirm that is acceptable
-on a device before wiring the rest.
+Cognito cannot accept Apple's `identityToken` or Google's `idToken` directly —
+there is no API for it — so the pool defines a custom auth challenge whose
+answer is that token, verified against the provider's public keys in
+`amplify/auth/native-token/verify-auth-challenge`. On iOS and Android that puts
+sign-in back on the native system sheet; web still goes through
+`signInWithRedirect` and the hosted UI.
+
+Nothing about this is configured in a console. Two values have to be right in
+`amplify/auth/native-token/config.ts`:
+
+- `APPLE_AUDIENCES` — the iOS bundle ID from `app.json`. Native Apple tokens are
+  addressed to the bundle ID, not to the `APPLE_SERVICE_ID` the hosted UI uses.
+- `GOOGLE_AUDIENCES` — the iOS client ID and the web client ID, both from
+  `GoogleSignin.configure` in `app/(onboarding)/auth-form.tsx`. Android tokens
+  are addressed to the web client ID.
+
+The account itself is created by the app signing up with a random password and
+the token attached as client metadata; `amplify/auth/pre-sign-up` verifies the
+token and confirms the account without emailing a code.
 
 *(The Supabase provider setup this section used to describe is on the
 `supabase` branch.)*

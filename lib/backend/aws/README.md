@@ -21,12 +21,18 @@ interface is on the `supabase` branch and is the one with shipping mileage.
 
 ## Where AWS does not match the other branch
 
-- **`signInWithIdToken` cannot work.** Cognito will not exchange a native
-  Apple/Google token for a user pool session. `supportsNativeIdToken: false`
-  tells the screens so, and they take `signInWithRedirect` instead — a browser
-  webview rather than the native sign-in sheet. **This is the gate most likely
-  to end the migration, and it is invisible on a simulator. Test it on a real
-  device before porting anything else.**
+- **`signInWithIdToken` is built, not given.** Cognito has no endpoint that
+  exchanges a native Apple/Google token for a user pool session, so the pool
+  defines a custom auth challenge whose answer is that token and verifies it in
+  `amplify/auth/native-token`. iOS and Android get the system sheet; web still
+  takes `signInWithRedirect` through the hosted UI, and
+  `amplify/auth/pre-sign-up` links those sign-ins to the native account so one
+  person keeps one account. Test on a real device — the native sheet does not
+  work in Expo Go or, for Google, on a simulator.
+- **The token audiences are configuration.** `amplify/auth/native-token/config.ts`
+  holds the iOS bundle ID (Apple addresses native tokens to it, *not* to the
+  Services ID the hosted UI uses) and the Google iOS and web client IDs. A wrong
+  value there rejects every sign-in on one platform and no others.
 - **Password resets need SES.** Cognito's built-in sender caps at 50
   messages/day account-wide. Leaving the SES sandbox is a support ticket,
   roughly 24 hours.
