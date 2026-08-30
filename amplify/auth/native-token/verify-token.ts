@@ -94,8 +94,15 @@ async function signingKey(spec: ProviderSpec, kid: string): Promise<Jwk> {
 }
 
 function decodeSegment(segment: string): Record<string, unknown> {
-  const decoded = Buffer.from(segment, "base64url").toString("utf8");
-  const parsed: unknown = JSON.parse(decoded);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(segment, "base64url").toString("utf8"));
+  } catch {
+    // Whatever arrived is not base64url-encoded JSON. Say that, rather than
+    // letting a parser's complaint about a stray byte become the message the
+    // sign-in screen shows.
+    throw new Error("Token is not a JWT.");
+  }
   if (!parsed || typeof parsed !== "object") {
     throw new Error("Token segment is not an object.");
   }
