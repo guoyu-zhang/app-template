@@ -3,7 +3,6 @@ import { defineAuth, secret } from "@aws-amplify/backend";
 import { createAuthChallenge } from "./native-token/create-auth-challenge/resource";
 import { defineAuthChallenge } from "./native-token/define-auth-challenge/resource";
 import { verifyAuthChallengeResponse } from "./native-token/verify-auth-challenge/resource";
-import { postConfirmation } from "./post-confirmation/resource";
 import { preSignUp } from "./pre-sign-up/resource";
 
 /**
@@ -85,6 +84,18 @@ export const auth = defineAuth({
       minLen: 0,
       maxLen: 2048,
     },
+    /**
+     * The `provider|subject` pairs a native sign-in may open this account
+     * with. Written only by the backend — the app cannot reach it, because
+     * being able to add an identity here would be the whole authentication
+     * check, self-served.
+     */
+    "custom:provider_ids": {
+      dataType: "String",
+      mutable: true,
+      minLen: 0,
+      maxLen: 512,
+    },
   },
   /**
    * Native Apple and Google sign-in lives in these five functions.
@@ -97,16 +108,15 @@ export const auth = defineAuth({
    * actually checked, and is the only thing standing between a stranger's JWT
    * and someone's account.
    *
-   * `preSignUp` and `postConfirmation` handle the accounts themselves: one
-   * creates them without an emailed code (the provider already verified the
-   * address) and links hosted-UI sign-ins to them, the other moves a user's
-   * attributes over the first time they arrive natively.
+   * `preSignUp` keeps the two paths on one account: web still federates
+   * through the hosted UI, and this links that identity to the native account
+   * rather than letting Cognito open a second one. Accounts themselves are
+   * created server-side, by the provision-user function.
    */
   triggers: {
     defineAuthChallenge,
     createAuthChallenge,
     verifyAuthChallengeResponse,
     preSignUp,
-    postConfirmation,
   },
 });

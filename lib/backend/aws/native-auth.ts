@@ -1,16 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import {
-  confirmSignIn,
-  getCurrentUser,
-  signIn,
-  signOut,
-  signUp,
-} from "aws-amplify/auth";
+import { confirmSignIn, getCurrentUser, signIn, signOut } from "aws-amplify/auth";
 
-import {
-  NATIVE_PROVIDER_METADATA_KEY,
-  NATIVE_TOKEN_METADATA_KEY,
-} from "@/amplify/auth/native-token/config";
+import outputs from "@/amplify_outputs.json";
 
 import type { OAuthProvider } from "../types";
 
@@ -24,41 +15,38 @@ import "./client";
  * token, and a Lambda verifies it (amplify/auth/native-token). From here that
  * looks like an ordinary two-step sign-in: start the flow, send the token.
  *
- * The account may not exist yet, and Cognito will not create one mid-challenge,
- * so a failed start is followed by a sign-up and one retry. The sign-up carries
- * the token as client metadata, which is what lets the pre-sign-up trigger
- * confirm the account without emailing a code.
+ * The account may not exist yet, and Cognito will not create one mid-challenge.
+ * Rather than have the device create it — which would mean handing Cognito the
+ * token as unencrypted client metadata and choosing a password for an account
+ * that should not have a usable one — a failed start goes to the provisioning
+ * endpoint, which verifies the same token server-side, and the sign-in is
+ * tried once more.
  */
 
 const NATIVE_PROVIDER_STORAGE_KEY = "auth.native-provider";
 
-/** Every class Cognito's default password policy insists on, once each. */
-const PASSWORD_GROUPS = [
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZ",
-  "abcdefghijklmnopqrstuvwxyz",
-  "0123456789",
-  "!@#$%^&*()-_=+",
-];
+const PROVISION_URL = (
+  outputs as { custom?: { provision_native_user_url?: string } }
+).custom?.provision_native_user_url;
 
 function errorName(error: unknown): string {
   return (error as { name?: string })?.name ?? "";
 }
 
 /**
- * A password the account needs to have and nobody needs to know. Sign-in goes
- * through the provider token; this exists only because Cognito's sign-up API
- * demands a password, and leaving it guessable would be a second, weaker door
- * into the same account.
+ * A value the provider stamps into the token it mints, so a token can be tied
+ * to the sign-in that asked for it rather than floating free. Apple supports
+ * this; the Google Sign-In API here does not, and its tokens carry no nonce.
+ *
+ * Either way it is not what stops a replay — the backend records every token
+ * it has spent, which is. This narrows what a token that leaks is good for.
  */
-function randomPassword(): string {
-  const bytes = new Uint8Array(32);
+export function createSignInNonce(): string {
+  const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  const alphabet = PASSWORD_GROUPS.join("");
-  const filler = Array.from(bytes, (byte) => alphabet[byte % alphabet.length]);
-  const required = PASSWORD_GROUPS.map(
-    (group, index) => group[bytes[index] % group.length],
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
   );
-  return [...required, ...filler].join("");
 }
 
 /**
@@ -134,15 +122,45 @@ async function answerChallenge(
   }
 }
 
+/**
+ * Asks the backend to create the account, or to attach this identity to one
+ * that already has the same verified address. Idempotent, so retrying a
+ * sign-in does not accumulate anything.
+ */
+async function provisionAccount(body: {
+  provider: OAuthProvider;
+  token: string;
+  nonce?: string;
+}): Promise<void> {
+  if (!PROVISION_URL) {
+    throw new Error(
+      "No provisioning endpoint in amplify_outputs.json. Run `npx ampx sandbox`.",
+    );
+  }
+
+  const response = await fetch(PROVISION_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const detail = (await response.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(detail?.error ?? "Sign-in was refused.");
+  }
+}
+
 export async function signInWithProviderToken(params: {
   provider: OAuthProvider;
   token: string;
+  nonce?: string;
 }): Promise<void> {
-  const { provider, token } = params;
+  const { provider, token, nonce } = params;
   const email = emailFromToken(token);
-  const challengeResponse = JSON.stringify({ provider, token });
+  const challengeResponse = JSON.stringify({ provider, token, nonce });
 
-  let firstFailure: unknown;
   try {
     await answerChallenge(email, challengeResponse);
     await rememberNativeProvider(provider);
@@ -150,7 +168,7 @@ export async function signInWithProviderToken(params: {
   } catch (error) {
     /**
      * An account that exists but was never confirmed cannot be signed into and
-     * cannot be signed up again. Only its owner can finish it, with the code
+     * cannot be provisioned around. Only its owner can finish it, with the code
      * that was emailed when it was created.
      */
     if (errorName(error) === "UserNotConfirmedException") {
@@ -158,33 +176,15 @@ export async function signInWithProviderToken(params: {
         "This email already has an unconfirmed account. Sign in with your email and password to finish confirming it.",
       );
     }
-    firstFailure = error;
   }
 
-  try {
-    await signUp({
-      username: email,
-      password: randomPassword(),
-      options: {
-        userAttributes: { email },
-        clientMetadata: {
-          [NATIVE_PROVIDER_METADATA_KEY]: provider,
-          [NATIVE_TOKEN_METADATA_KEY]: token,
-        },
-      },
-    });
-  } catch (error) {
-    /**
-     * The account was there all along, so the sign-in failure above was the
-     * real answer — a rejected token, most likely — and reporting this one
-     * instead would send whoever reads the log looking in the wrong place.
-     */
-    if (errorName(error) === "UsernameExistsException") {
-      throw firstFailure;
-    }
-    throw error;
-  }
-
+  /**
+   * Either there is no account yet, or there is one this identity has never
+   * been attached to. Both are the provisioning endpoint's job, and both of
+   * its refusals are more specific than the sign-in failure above — so its
+   * error is the one worth showing.
+   */
+  await provisionAccount({ provider, token, nonce });
   await answerChallenge(email, challengeResponse);
   await rememberNativeProvider(provider);
 }
@@ -195,9 +195,8 @@ export async function signInWithProviderToken(params: {
  * A federated (hosted UI) account carries an `identities` claim that says so;
  * an account created from a provider token looks exactly like an email one to
  * Cognito, and the app uses the difference to decide whether to offer a
- * password change and what to show on the account screen. Recording it as a
- * custom attribute would mean adding one to a live user pool, which is a
- * heavier and less reversible change than a value on the device.
+ * password change and what to show on the account screen. The pool does store
+ * the identity, but not anywhere an ID token exposes it.
  */
 async function rememberNativeProvider(provider: OAuthProvider): Promise<void> {
   try {

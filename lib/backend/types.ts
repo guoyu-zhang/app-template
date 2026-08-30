@@ -65,6 +65,7 @@ export interface AuthAdapter {
   signInWithIdToken(params: {
     provider: OAuthProvider;
     token: string;
+    nonce?: string;
   }): Promise<BackendResult>;
 
   /**

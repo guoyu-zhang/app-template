@@ -105,9 +105,22 @@ Nothing about this is configured in a console. Two values have to be right in
   `GoogleSignin.configure` in `app/(onboarding)/auth-form.tsx`. Android tokens
   are addressed to the web client ID.
 
-The account itself is created by the app signing up with a random password and
-the token attached as client metadata; `amplify/auth/pre-sign-up` verifies the
-token and confirms the account without emailing a code.
+Accounts are created server-side. Cognito will not make a user in the middle of
+a challenge, so the first sign-in for a new person calls the unauthenticated
+function URL published as `custom.provision_native_user_url` in
+`amplify_outputs.json`. That function verifies the same token, creates the
+account with a password it generates and discards, and records the identity —
+so the app never handles the password, and the token never goes into Cognito's
+`ClientMetadata`, which AWS does not encrypt.
+
+An account is opened by `provider|subject`, not by email — the pairs it answers
+to live in `custom:provider_ids`. Email finds the account the first time and is
+never the credential afterwards. Each token is also spent once: the verifier
+records its hash in a DynamoDB table with a TTL, so a captured token cannot be
+replayed inside its lifetime.
+
+`npm run test:auth` covers the verifier: audience, issuer, expiry, freshness,
+edited payloads, chosen algorithms, unpublished keys, and the identity rules.
 
 *(The Supabase provider setup this section used to describe is on the
 `supabase` branch.)*

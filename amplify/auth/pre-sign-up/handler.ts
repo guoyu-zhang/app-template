@@ -1,88 +1,38 @@
 import type { PreSignUpTriggerHandler } from "aws-lambda";
 
 import {
-  NATIVE_PROVIDER_METADATA_KEY,
-  NATIVE_TOKEN_METADATA_KEY,
-} from "../native-token/config";
-import {
   findUsersByEmail,
   isFederated,
   linkFederatedIdentity,
   splitFederatedUsername,
 } from "../native-token/cognito-users";
-import {
-  isNativeProvider,
-  verifyProviderToken,
-} from "../native-token/verify-token";
 
 /**
- * Guards the two ways an account can come into existence besides an ordinary
- * email sign-up.
+ * Keeps the hosted UI and native sign-in on one account.
  *
- * 1. A provider-token sign-up. The client cannot create an account out of an
- *    Apple or Google token on its own — Cognito has no such API — so it signs
- *    the user up by email and sends the token along as client metadata. This
- *    trigger verifies the token and, only then, confirms the account without
- *    an emailed code. The verification is what makes that safe: without it,
- *    anyone could claim any address by asserting they had signed in with
- *    Apple.
+ * Web still signs in through Cognito's hosted UI, which federates: it makes its
+ * own user, prefixed with the provider name. If that person already has a
+ * native account — signed in on their phone, or with an email and password —
+ * Cognito would happily give them a second one. Linking the incoming identity
+ * to the account that exists is what stops that.
  *
- * 2. A hosted-UI sign-in (still the web path) for someone who already has a
- *    native account. Left alone, Cognito would make a second, federated user
- *    for the same person; instead the provider identity is linked to the
- *    account that exists.
- *
- * Ordinary email sign-ups fall through untouched, still confirmed by code.
+ * Every other kind of sign-up falls through untouched: an ordinary email
+ * sign-up still gets its emailed code, and the account created server-side by
+ * provision-user arrives here as an admin creation with nothing to do.
  */
 export const handler: PreSignUpTriggerHandler = async (event) => {
-  if (event.triggerSource === "PreSignUp_ExternalProvider") {
-    await linkToExistingAccount(event);
-    return event;
-  }
+  if (event.triggerSource !== "PreSignUp_ExternalProvider") return event;
 
-  if (event.triggerSource !== "PreSignUp_SignUp") return event;
-
-  const metadata = event.request.clientMetadata ?? {};
-  const provider = metadata[NATIVE_PROVIDER_METADATA_KEY];
-  const token = metadata[NATIVE_TOKEN_METADATA_KEY];
-
-  // No provider claim at all: an ordinary email sign-up, which Cognito should
-  // handle exactly as it did before this trigger existed.
-  if (!provider && !token) return event;
-
-  if (!isNativeProvider(provider) || !token) {
-    throw new Error("Provider sign-up is missing its provider or token.");
-  }
-
-  const identity = await verifyProviderToken(provider, token);
   const email = event.request.userAttributes.email?.toLowerCase();
-  /**
-   * The token proves the provider verified *its* address. This says the
-   * account being created is that address and not another one — the check that
-   * stops a valid token being used to claim someone else's email.
-   */
-  if (!email || email !== identity.email) {
-    throw new Error("Provider token was issued for a different email address.");
-  }
-
-  event.response.autoConfirmUser = true;
-  event.response.autoVerifyEmail = true;
-  return event;
-};
-
-async function linkToExistingAccount(
-  event: Parameters<PreSignUpTriggerHandler>[0],
-): Promise<void> {
-  const email = event.request.userAttributes.email?.toLowerCase();
-  if (!email) return;
+  if (!email) return event;
 
   const incoming = splitFederatedUsername(event.userName);
-  if (!incoming) return;
+  if (!incoming) return event;
 
   const existing = (await findUsersByEmail(event.userPoolId, email)).find(
     (user) => user.Username && !isFederated(user),
   );
-  if (!existing?.Username) return;
+  if (!existing?.Username) return event;
 
   await linkFederatedIdentity({
     userPoolId: event.userPoolId,
@@ -95,4 +45,5 @@ async function linkToExistingAccount(
   // already confirmed; asking for a code here would strand the sign-in.
   event.response.autoConfirmUser = true;
   event.response.autoVerifyEmail = true;
-}
+  return event;
+};
